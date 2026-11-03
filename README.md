@@ -1,79 +1,83 @@
-# Molecules from XYZ
+# Molecule Viewer — 3D-просмотр молекул из XYZ-файлов
 
-Программа для просмотра молекул из .xyz файлов.
-Модель «шары и стержни»: цвет и размер атома зависят от элемента,
-связи определяются автоматически по расстоянию между атомами.
+Курсовая работа по компьютерной графике. Программа на C++ и OpenGL читает файлы формата `.xyz`, определяет связи между атомами по ковалентным радиусам и рисует молекулу в 3D. Её можно вращать мышью, масштабировать колёсиком и скрывать отдельные элементы через панель сверху справа.
 
-Написана на C++ с использованием OpenGL 2.1, GLFW и GLAD.
+## Возможности
+
+- Загрузка молекул из `.xyz` файлов (в комплекте более 60 готовых).
+- Автоматический поиск связей по расстояниям и ковалентным радиусам.
+- Цвета и размеры атомов по таблице элементов (H, C, N, O, галогены, металлы и др.).
+- Освещение и глубина, молекула автоматически центрируется и масштабируется под размер окна.
+- Панель **Elements** (Dear ImGui): список элементов текущей молекулы с цветом и кнопкой-«глазом», чтобы скрыть или показать элемент. Связи скрытых атомов тоже не рисуются.
 
 ## Управление
 
-- Левая кнопка мыши (зажать и двигать): вращение молекулы
-- Колесо мыши: приближение и отдаление
-- Клавиши 1-6: вода, метан, бензол, кофеин, аммиак, бромметан
-- Перетаскивание .xyz файла в окно программы: загрузка этого файла
-- ESC: выход
+| Действие | Что делает |
+|---|---|
+| Левая кнопка мыши + движение | Вращение молекулы |
+| Колёсико мыши | Приближение и отдаление |
+| Клавиши `1`–`6` | Вода, метан, бензол, кофеин, аммиак, бромметан |
+| Перетаскивание `.xyz` в окно | Загрузка любой молекулы |
+| Клик по «глазу» в панели Elements | Скрыть или показать элемент |
+| `Esc` | Выход |
 
-## Формат файла .xyz
+Файл можно также передать аргументом: `app.exe molecules/ethanol.xyz`.
 
+## Используемые библиотеки
+
+- [GLFW](https://www.glfw.org/): окно и ввод.
+- [GLAD](https://glad.dav1d.de/): загрузчик OpenGL.
+- [GLM](https://github.com/g-truc/glm): математика (подключена через vcpkg).
+- [Dear ImGui](https://github.com/ocornut/imgui): интерфейс (панель элементов). Лежит в папке `imgui-master`, нужна версия 1.92 или новее (используется `FontScaleMain`).
+
+## Сборка (Windows)
+
+Требуется: Visual Studio 2022 (с компонентом «Разработка классических приложений на C++»), CMake 3.20+ и [vcpkg](https://github.com/microsoft/vcpkg).
+
+1. Установите зависимости через vcpkg:
+   ```
+   vcpkg install glfw3 glad glm --triplet x64-windows-static-md
+   ```
+2. Укажите путь к vcpkg одним из способов:
+   - задайте переменную окружения `VCPKG_ROOT` (например, `C:\bin\vcpkg`);
+   - или положите vcpkg в `C:\bin\vcpkg`: этот путь `CMakeLists.txt` проверяет автоматически.
+3. Склонируйте и соберите проект:
+   ```
+   git clone https://github.com/ghostinbinary/molecule-viewer.git
+   cd molecule-viewer
+   cmake -B build
+   cmake --build build --config Release
+   ```
+4. Запустите `build\Release\app.exe`. Папка `molecules` копируется рядом с exe при сборке автоматически.
+
+Проект можно открыть и прямо в Visual Studio через **Файл → Открыть → CMake**.
+
+## Структура проекта
+
+```
+├── main.cpp          # вся логика: загрузка XYZ, связи, отрисовка, ввод, интерфейс
+├── CMakeLists.txt    # сборка
+├── molecules/        # .xyz файлы молекул
+├── imgui-master/     # Dear ImGui (MIT)
+└── README.md
+```
+
+## Формат XYZ
+
+```
 3
-Water
-O 0.000000 0.000000 0.000000
-H 0.758602 0.000000 0.504284
-H -0.758602 0.000000 0.504284
+вода
+O   0.000   0.000   0.117
+H   0.000   0.757  -0.469
+H   0.000  -0.757  -0.469
+```
 
-Первая строка: число атомов. Вторая: комментарий.
-Далее: символ элемента и три координаты в ангстремах.
+Первая строка — число атомов, вторая — комментарий, дальше по строке на атом: символ элемента и координаты X Y Z в ångström.
 
-## Поддерживаемые элементы
+## Как определяются связи
 
-H, C, N, O, S, P, F, Cl, Br. Остальные элементы рисуются серо-фиолетовым шаром.
-Новый элемент добавляется одной строкой в таблицу `elements` в начале main.cpp.
+Два атома считаются связанными, если расстояние между ними меньше суммы их ковалентных радиусов, умноженной на `BOND_TOLERANCE` (1.25). Затем отсекаются связи, которые заметно длиннее ближайшей связи любого из атомов (`BOND_RELATIVE`, 1.30). Между одинаковыми щелочными и щелочноземельными металлами связи не строятся. Эти константы лежат в начале `main.cpp`.
 
-## Сборка
+## Лицензии
 
-1. Установите vcpkg и зависимости (тройка x64-windows-static-md):
-   glfw3, glad, glm.
-2. Откройте проект как CMake-проект (например, в Visual Studio) и соберите.
-3. Файлы .xyz ищутся рядом с программой или в папке C:/first_project/.
-__________________________________________________________________________________________
-
-# Molecules from XYZ
-
-A program for viewing molecules from .xyz files.
-Ball-and-stick model: atom colors and sizes depend on the element,
-and bonds are automatically determined by the distances between atoms.
-
-Written in C++ using OpenGL 2.1, GLFW, and GLAD.
-
-## Controls
-
-- Left mouse button (click and drag): rotate the molecule
-- Mouse wheel: zoom in and out
-- Keys 1-6: water, methane, benzene, caffeine, ammonia, bromomethane
-- Drag and drop an .xyz file into the program window: load the file
-- ESC: exit
-
-## .xyz File Format
-
-3
-Water
-O 0.000000 0.000000 0.000000
-H 0.758602 0.000000 0.504284
-H -0.758602 0.000000 0.504284
-
-First line: number of atoms. Second line: comment.
-Next lines: element symbol and three coordinates in angstroms.
-
-## Supported Elements
-
-H, C, N, O, S, P, F, Cl, Br. All other elements are displayed as grayish-purple spheres.
-A new element can be added with a single line in the `elements` table at the beginning of main.cpp.
-
-## Build Instructions
-
-1. Install vcpkg and dependencies (triplet x64-windows-static-md):
-   glfw3, glad, glm.
-2. Open the project as a CMake project (for example, in Visual Studio) and build it.
-3. .xyz files are searched for next to the program or in the C:/first_project/ directory.
-
+Dear ImGui распространяется под лицензией MIT (см. `imgui-master/LICENSE.txt`).

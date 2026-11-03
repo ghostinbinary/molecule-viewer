@@ -1,8 +1,27 @@
-     build/
-     out/
-     .vs/
-     vcpkg/
-     *.exe
-     *.obj
-     *.pdb
-     CMakeUserPresets.json
+# Сборка
+build/
+out/
+cmake-build-*/
+CMakeUserPresets.json
+
+# Зависимости (vcpkg ставится отдельно)
+vcpkg/
+
+# Артефакты компиляции
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.log
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# Файл настроек окон ImGui создаётся при запуске
+imgui.ini
+
+# Мусор ОС
+Thumbs.db
+desktop.ini

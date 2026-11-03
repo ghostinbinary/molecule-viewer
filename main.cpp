@@ -16,26 +16,26 @@ using namespace std;
 
 const float PI = 3.14159265f;
 
-// Настройки
-const float BOND_THICKNESS = 0.09f;     // радиус цилиндра связи
-const float BOND_TOLERANCE = 1.25f;     // кандидат в связи, если расстояние < tolerance * (r1 + r2)
-const float BOND_RELATIVE = 1.30f;      // ИЗМЕНЕНО: было 1.15f. Кратные связи короче, их соседние C-H нельзя отбрасывать
-const float MOUSE_SENSITIVITY = 0.5f;   // скорость вращения при перетаскивании мышью
-const float MIN_ZOOM = 0.3f;            // минимальный масштаб
-const float MAX_ZOOM = 4.0f;            // максимальный масштаб
-const int SPHERE_STEPS = 20;            // гладкость шара
-const int BOND_STEPS = 12;              // гладкость цилиндра связи
+// Настройки отображения и поиска связей
+const float BOND_THICKNESS = 0.09f;
+const float BOND_TOLERANCE = 1.25f;  // Допустимое расстояние с учётом радиусов атомов
+const float BOND_RELATIVE = 1.30f;  // Отсекаем связи, которые слишком длинные относительно ближайшей
+const float MOUSE_SENSITIVITY = 0.5f;
+const float MIN_ZOOM = 0.3f;
+const float MAX_ZOOM = 4.0f;
+const int SPHERE_STEPS = 20;  // Детализация сфер
+const int BOND_STEPS = 12;  // Детализация цилиндров
 
-// Таблица элементов
+// Радиусы и цвета элементов
 struct ElementInfo {
     const char* symbol;
-    float bondRadius;    // нужен для поиска связей (ковалентный радиус, Å)
-    float sphereRadius;  // размер шара на экране
-    float r, g, b;       // цвет
+    float bondRadius;  // Ковалентный радиус для поиска связей
+    float sphereRadius;  // Радиус сферы при отрисовке
+    float r, g, b;  // Цвет RGB
 };
 
 const ElementInfo elements[] = {
-    // символ  связь  шар     R      G      B
+    // Символ  радиус связи  размер шара  цвет RGB
     { "H",     0.31f, 0.25f,  0.95f, 0.95f, 0.95f },
     { "He",    0.28f, 0.25f,  0.85f, 1.00f, 1.00f },
     { "Li",    1.28f, 0.55f,  0.80f, 0.50f, 1.00f },
@@ -46,7 +46,7 @@ const ElementInfo elements[] = {
     { "O",     0.66f, 0.38f,  0.95f, 0.12f, 0.12f },
     { "F",     0.57f, 0.36f,  0.56f, 0.88f, 0.31f },
     { "Ne",    0.58f, 0.34f,  0.70f, 0.89f, 0.96f },
-    { "Na",    1.66f, 0.55f,  0.67f, 0.36f, 0.95f },   // ИЗМЕНЕНО: реальный радиус 1.66 (было 0.75)
+    { "Na",    1.66f, 0.55f,  0.67f, 0.36f, 0.95f },
     { "Mg",    1.41f, 0.52f,  0.54f, 1.00f, 0.00f },
     { "Al",    1.21f, 0.50f,  0.75f, 0.65f, 0.65f },
     { "Si",    1.11f, 0.48f,  0.94f, 0.78f, 0.63f },
@@ -98,63 +98,61 @@ const ElementInfo elements[] = {
     { "U",     1.96f, 0.62f,  0.00f, 0.56f, 1.00f },
 };
 
-// Значения для всех элементов, которых нет в таблице.
+// Для элементов, которых нет в таблице
 const ElementInfo defaultElement = { "?", 0.75f, 0.42f, 0.65f, 0.55f, 0.75f };
 
-// Ищет элемент в таблице по символу; если не нашли, возвращает defaultElement.
 const ElementInfo& getElement(const string& symbol) {
     for (const ElementInfo& element : elements)
         if (symbol == element.symbol) return element;
     return defaultElement;
 }
 
-// Файлы молекул:
+// Молекулы, доступные по клавишам 1–6
 const char* moleculeFiles[] = {
     "water.xyz", "methane.xyz", "benzene.xyz",
     "caffeine.xyz", "ammonia.xyz", "bromomethane.xyz"
 };
-// Количество файлов в списке (ИЗМЕНЕНО: считается автоматически по размеру массива)
 const int MOLECULE_COUNT = sizeof(moleculeFiles) / sizeof(moleculeFiles[0]);
 
-// Данные молекулы
+// Атомы и связи текущей молекулы
 struct Atom {
-    string element;   // символ элемента
-    float x, y, z;    // координаты
+    string element;
+    float x, y, z;
 };
 
-vector<Atom> atoms;              // все атомы
-vector<pair<int, int>> bonds;    // связи: пары номеров атомов
+vector<Atom> atoms;
+vector<pair<int, int>> bonds;  // Индексы двух соединённых атомов
 
-vector<string> usedElements;     // элементы, которые есть в текущем файле (для легенды)
-set<string> hiddenElements;      // элементы, скрытые кнопкой-глазом
+vector<string> usedElements;  // Элементы для легенды
+set<string> hiddenElements;  // Скрытые через легенду элементы
 
 bool isHidden(const string& symbol) {
     return hiddenElements.count(symbol) > 0;
 }
 
-// Глобальные переменные для управления мышью
-bool isDragging = false;       // зажата ли левая кнопка мыши
-double lastMouseX = 0.0;       // прошлая позиция мыши
+// Поворот и масштабирование мышью
+bool isDragging = false;
+double lastMouseX = 0.0;
 double lastMouseY = 0.0;
-float rotX = 20.0f;            // углы поворота (в градусах)
+float rotX = 20.0f;
 float rotY = 25.0f;
-float zoomLevel = 1.0f;        // масштаб (колесо мыши)
-float cameraDistance = 8.0f;   // расстояние от камеры до молекулы
+float zoomLevel = 1.0f;
+float cameraDistance = 8.0f;
 
-// ДОБАВЛЕНО: одинаковые щелочные и щелочноземельные металлы между собой не связываем (Na-Na в NaCl).
+// Не строим связи между одинаковыми щелочными и щелочноземельными металлами
 bool isMetal(const string& s) {
     return s == "Li" || s == "Na" || s == "K" || s == "Rb" || s == "Cs" ||
         s == "Be" || s == "Mg" || s == "Ca" || s == "Sr" || s == "Ba";
 }
 
-// Чтение XYZ: первая строка - число атомов, вторая - комментарий, затем элемент и x y z.
+// XYZ: число атомов, строка описания, затем символ элемента и координаты
 bool loadXYZ(const string& filename, GLFWwindow* window) {
     ifstream file(filename);
 
-    // Если файл не нашёлся рядом с программой, ищем в папке проекта.
+    // Если файл не найден по указанному пути, ищем его в папке molecules рядом с программой
     if (!file.is_open()) {
         file.clear();
-        file.open("C:/first_project/" + filename);
+        file.open("molecules/" + filename);
     }
     if (!file.is_open()) {
         cout << "File not found: " << filename << endl;
@@ -167,10 +165,10 @@ bool loadXYZ(const string& filename, GLFWwindow* window) {
         return false;
     }
     string comment;
-    getline(file, comment); // Дочитываем первую строку.
-    getline(file, comment); // Пропускаем строку-комментарий XYZ.
+    getline(file, comment);  // Переходим на следующую строку
+    getline(file, comment);  // Пропускаем описание молекулы
 
-    // Сначала читаем во временный список, чтобы при ошибке не испортить текущую молекулу.
+    // Читаем во временный массив, чтобы при ошибке сохранить прежнюю молекулу
     vector<Atom> loaded;
     for (int i = 0; i < count; ++i) {
         Atom a;
@@ -183,8 +181,8 @@ bool loadXYZ(const string& filename, GLFWwindow* window) {
 
     atoms = loaded;
 
-    // Список элементов файла для легенды (без повторов, в порядке появления).
-    // Скрытые элементы сбрасываем: новый файл показывается целиком.
+    // Собираем уникальные элементы для легенды в порядке появления
+    // При загрузке новой молекулы снова показываем все элементы
     usedElements.clear();
     hiddenElements.clear();
     for (const Atom& a : atoms) {
@@ -194,32 +192,31 @@ bool loadXYZ(const string& filename, GLFWwindow* window) {
         if (!found) usedElements.push_back(a.element);
     }
 
-    // Переносим центр молекулы в точку (0, 0, 0).
+    // Смещаем молекулу так, чтобы её центр был в начале координат
     float cx = 0, cy = 0, cz = 0;
     for (const Atom& a : atoms) { cx += a.x; cy += a.y; cz += a.z; }
     cx /= count; cy /= count; cz /= count;
 
-    // Заодно находим радиус молекулы (самый далёкий атом от центра).
+    // Находим расстояние до самого дальнего атома
     float size = 0;
     for (Atom& a : atoms) {
         a.x -= cx; a.y -= cy; a.z -= cz;
         float d = sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
         if (d > size) size = d;
     }
-    // Чем больше молекула, тем дальше камера.
+    // Подбираем расстояние до камеры под размер молекулы
     cameraDistance = (size + 1.0f) * 3.0f;
     zoomLevel = 1.0f;
 
-    // Автоматически находим связи по расстоянию и ковалентным радиусам.
-    // Шаг 1: собираем всех кандидатов и запоминаем лучшую связь каждого атома.
-    // ratio = расстояние / (r1 + r2); чем меньше ratio, тем "правильнее" связь.
+    // Ищем связи по расстояниям и ковалентным радиусам
+    // Для каждого атома запоминаем самую короткую связь относительно суммы радиусов
+    // ratio — расстояние между атомами, делённое на сумму их радиусов
     struct Candidate { int i, j; float ratio; };
     vector<Candidate> candidates;
     vector<float> bestRatio(count, 1000.0f);
 
     for (int i = 0; i < count; ++i) {
         for (int j = i + 1; j < count; ++j) {
-            // ДОБАВЛЕНО: между одинаковыми щелочными/щелочноземельными металлами связей нет
             if (atoms[i].element == atoms[j].element && isMetal(atoms[i].element)) continue;
             float dx = atoms[i].x - atoms[j].x;
             float dy = atoms[i].y - atoms[j].y;
@@ -236,7 +233,7 @@ bool loadXYZ(const string& filename, GLFWwindow* window) {
         }
     }
 
-    // Шаг 2: оставляем связь, только если она не сильно хуже лучшей связи обоих атомов.
+    // Убираем кандидатов, которые заметно длиннее ближайших связей обоих атомов
     bonds.clear();
     for (const Candidate& c : candidates) {
         if (c.ratio <= bestRatio[c.i] * BOND_RELATIVE &&
@@ -244,23 +241,23 @@ bool loadXYZ(const string& filename, GLFWwindow* window) {
             bonds.push_back({ c.i, c.j });
     }
 
-    // Заголовок окна: имя файла, число атомов и связей.
+    // Показываем имя файла и количество атомов и связей в заголовке
     string title = filename + " - " + to_string(count) +
         " atoms, " + to_string(bonds.size()) + " bonds";
     glfwSetWindowTitle(window, title.c_str());
     return true;
 }
 
-// Шар, нарисованный несколькими полосками по широте.
+// Рисуем сферу полосами между соседними параллелями
 void drawSphere(float radius) {
     for (int i = 0; i < SPHERE_STEPS; ++i) {
-        float lat1 = -PI / 2 + PI * i / SPHERE_STEPS;        // нижняя граница полоски
-        float lat2 = -PI / 2 + PI * (i + 1) / SPHERE_STEPS;  // верхняя граница полоски
+        float lat1 = -PI / 2 + PI * i / SPHERE_STEPS;
+        float lat2 = -PI / 2 + PI * (i + 1) / SPHERE_STEPS;
         glBegin(GL_QUAD_STRIP);
         for (int j = 0; j <= SPHERE_STEPS; ++j) {
-            float lon = 2 * PI * j / SPHERE_STEPS;           // долгота
+            float lon = 2 * PI * j / SPHERE_STEPS;
             float x = cos(lon), z = sin(lon);
-            // Нормаль направлена от центра шара наружу (нужна для освещения).
+            // Нормали нужны для правильного освещения
             glNormal3f(cos(lat1) * x, sin(lat1), cos(lat1) * z);
             glVertex3f(radius * cos(lat1) * x, radius * sin(lat1), radius * cos(lat1) * z);
             glNormal3f(cos(lat2) * x, sin(lat2), cos(lat2) * z);
@@ -270,35 +267,33 @@ void drawSphere(float radius) {
     }
 }
 
-// Тонкий цилиндр между двумя атомами (химическая связь).
+// Связь между атомами рисуем цилиндром
 void drawBond(const Atom& a, const Atom& b) {
-    // Вектор от атома a к атому b и его длина.
     float dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
     float length = sqrt(dx * dx + dy * dy + dz * dz);
     if (length < 0.001f) return;
 
-    glPushMatrix();                    // запоминаем систему координат
-    glTranslatef(a.x, a.y, a.z);       // переносим начало координат в атом a
-    // Цилиндр строится вдоль оси Z, поэтому поворачиваем его в сторону атома b.
+    glPushMatrix();
+    glTranslatef(a.x, a.y, a.z);
+    // Поворачиваем цилиндр, построенный вдоль Z, к следующему атому
     float angle = acos(dz / length) * 180.0f / PI;
     if (fabs(dx) + fabs(dy) > 0.0001f)
         glRotatef(angle, -dy, dx, 0);
-    else if (dz < 0) glRotatef(180, 1, 0, 0);   // связь строго вдоль Z, но вниз
+    else if (dz < 0) glRotatef(180, 1, 0, 0);  // Отдельный случай: направление строго по отрицательной оси Z
 
-    glColor3f(0.70f, 0.70f, 0.73f);    // светло-серый цвет связи
+    glColor3f(0.70f, 0.70f, 0.73f);
     glBegin(GL_QUAD_STRIP);
     for (int k = 0; k <= BOND_STEPS; ++k) {
         float t = 2 * PI * k / BOND_STEPS, x = cos(t), y = sin(t);
         glNormal3f(x, y, 0);
-        glVertex3f(BOND_THICKNESS * x, BOND_THICKNESS * y, 0);        // нижнее кольцо
-        glVertex3f(BOND_THICKNESS * x, BOND_THICKNESS * y, length);   // верхнее кольцо
+        glVertex3f(BOND_THICKNESS * x, BOND_THICKNESS * y, 0);
+        glVertex3f(BOND_THICKNESS * x, BOND_THICKNESS * y, length);
     }
     glEnd();
-    glPopMatrix();                     // возвращаем систему координат
+    glPopMatrix();
 }
 
-// Кнопка-глаз: открытый глаз = элемент виден, перечёркнутый = скрыт.
-// Возвращает true в кадре, когда на неё нажали.
+// Кнопка видимости элемента в легенде
 bool eyeButton(const char* id, bool visible) {
     ImVec2 size(28.0f, ImGui::GetTextLineHeight());
     ImVec2 p = ImGui::GetCursorScreenPos();
@@ -310,7 +305,7 @@ bool eyeButton(const char* id, bool visible) {
     float w = size.x * 0.5f, h = size.y * 0.5f;
     ImVec2 left(cx - w + 2, cy), right(cx + w - 2, cy);
 
-    // Контур глаза: две дуги (верхняя и нижняя) и зрачок.
+    // Контур глаза и зрачок
     dl->AddBezierQuadratic(left, ImVec2(cx, cy - h * 1.6f), right, col, 1.5f);
     dl->AddBezierQuadratic(left, ImVec2(cx, cy + h * 1.6f), right, col, 1.5f);
     dl->AddCircleFilled(ImVec2(cx, cy), h * 0.45f, col);
@@ -319,7 +314,7 @@ bool eyeButton(const char* id, bool visible) {
     return clicked;
 }
 
-// Легенда в правом верхнем углу: цветной кружок, символ элемента, глаз.
+// Легенда с цветами и переключателями видимости
 void drawLegend() {
     ImGuiIO& io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 10.0f, 10.0f), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
@@ -338,7 +333,7 @@ void drawLegend() {
         bool visible = !isHidden(symbol);
         ImGui::PushID(i);
 
-        // Цветной кружок (у скрытого элемента - полупрозрачный).
+        // Скрытые элементы рисуем полупрозрачными
         float h = ImGui::GetTextLineHeight();
         ImVec2 p = ImGui::GetCursorScreenPos();
         ImU32 fill = IM_COL32((int)(info.r * 255), (int)(info.g * 255), (int)(info.b * 255), visible ? 255 : 70);
@@ -347,12 +342,10 @@ void drawLegend() {
         dl->AddCircle(ImVec2(p.x + h * 0.5f, p.y + h * 0.5f), h * 0.5f, IM_COL32(200, 200, 200, visible ? 200 : 70));
         ImGui::Dummy(ImVec2(h, h));
 
-        // Символ элемента.
         ImGui::SameLine();
         if (visible) ImGui::Text("%s", symbol.c_str());
         else         ImGui::TextDisabled("%s", symbol.c_str());
 
-        // Глаз справа.
         ImGui::SameLine(75.0f);
         if (eyeButton("##eye", visible)) {
             if (visible) hiddenElements.insert(symbol);
@@ -363,16 +356,14 @@ void drawLegend() {
     ImGui::End();
 }
 
-// Обработчики ввода
+// Обработка мыши и клавиатуры
 
-// Нажатие и отпускание левой кнопки мыши.
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) {
-            // Клик по интерфейсу (легенде) не должен вращать молекулу.
+            // Клики по интерфейсу не должны вращать молекулу
             if (ImGui::GetIO().WantCaptureMouse) return;
             isDragging = true;
-            // Запоминаем, где началось перетаскивание.
             glfwGetCursorPos(window, &lastMouseX, &lastMouseY);
         }
         else if (action == GLFW_RELEASE) {
@@ -381,22 +372,21 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     }
 }
 
-// Движение мыши: если кнопка зажата, поворачиваем молекулу.
+// Вращаем молекулу при перетаскивании мышью
 void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
     if (isDragging) {
-        // Насколько сдвинулась мышь с прошлого раза.
         double deltaX = xpos - lastMouseX;
         double deltaY = ypos - lastMouseY;
 
-        rotY += (float)deltaX * MOUSE_SENSITIVITY;   // влево-вправо: вокруг оси Y
-        rotX += (float)deltaY * MOUSE_SENSITIVITY;   // вверх-вниз: вокруг оси X
+        rotY += (float)deltaX * MOUSE_SENSITIVITY;
+        rotX += (float)deltaY * MOUSE_SENSITIVITY;
 
         lastMouseX = xpos;
         lastMouseY = ypos;
     }
 }
 
-// Колесо мыши: приближение и отдаление.
+// Масштабирование колёсиком мыши
 void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
     if (ImGui::GetIO().WantCaptureMouse) return;
     zoomLevel *= yoffset > 0 ? 1.1f : 0.9f;
@@ -404,41 +394,39 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
     if (zoomLevel > MAX_ZOOM) zoomLevel = MAX_ZOOM;
 }
 
-// Клавиатура: ESC - выход, цифры - загрузка молекулы из списка.
+// ESC закрывает окно, клавиши 1–6 переключают молекулы
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (action != GLFW_PRESS) return;
     if (key == GLFW_KEY_ESCAPE) glfwSetWindowShouldClose(window, true);
 
-    // Клавиши 1, 2, 3, ... загружают файлы из списка moleculeFiles.
     int index = key - GLFW_KEY_1;
     if (index >= 0 && index < MOLECULE_COUNT)
         loadXYZ(moleculeFiles[index], window);
 }
 
-// Перетаскивание файла в окно: загружаем его.
+// Загрузка XYZ перетаскиванием в окно
 void dropCallback(GLFWwindow* window, int count, const char** paths) {
     if (count > 0) loadXYZ(paths[0], window);
 }
 
-// Изменение размера окна: обновляем область рисования и перспективу.
+// Обновляем перспективу при изменении размера окна
 void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
-    if (height < 1) height = 1;    // защита от деления на ноль
+    if (height < 1) height = 1;
     glViewport(0, 0, width, height);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    float top = 0.1f * tan(45.0f * PI / 360.0f);   // угол обзора 45 градусов
-    float right = top * width / height;            // учитываем пропорции окна
+    float top = 0.1f * tan(45.0f * PI / 360.0f);  // Угол обзора 45 градусов
+    float right = top * width / height;
     glFrustum(-right, right, -top, top, 0.1, 200.0);
     glMatrixMode(GL_MODELVIEW);
 }
 
 int main(int argc, char** argv) {
-    // 1. Инициализация GLFW
+    // Запуск GLFW и создание окна OpenGL 2.1
     if (!glfwInit()) return -1;
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
 
-    // 2. Создание окна
     GLFWwindow* window = glfwCreateWindow(850, 650, "Molecules from XYZ", NULL, NULL);
     if (window == NULL) {
         cout << "Failed to create GLFW window" << endl;
@@ -447,14 +435,13 @@ int main(int argc, char** argv) {
     }
     glfwMakeContextCurrent(window);
 
-    // 3. Инициализация GLAD (загрузка функций OpenGL)
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
         cout << "Failed to initialize GLAD" << endl;
         glfwTerminate();
         return -1;
     }
 
-    // 4. Регистрация обработчиков событий
+    // Подключаем обработчики ввода
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetCursorPosCallback(window, cursorPosCallback);
     glfwSetScrollCallback(window, scrollCallback);
@@ -462,8 +449,7 @@ int main(int argc, char** argv) {
     glfwSetDropCallback(window, dropCallback);
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
-    // Dear ImGui: подключаем ПОСЛЕ наших обработчиков (true = ImGui встанет в цепочку
-    // и будет вызывать наши обработчики после своих).
+    // ImGui подключается с передачей событий нашим обработчикам
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
@@ -471,43 +457,40 @@ int main(int argc, char** argv) {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL2_Init();
 
-    // Один раз настраиваем перспективу вручную (колбэк срабатывает только при изменении размера).
+    // Задаём перспективу при запуске, до первого изменения размера окна
     int width, height;
     glfwGetFramebufferSize(window, &width, &height);
     framebufferSizeCallback(window, width, height);
 
-    // 5. Настройки OpenGL: тест глубины и простое освещение
-    glEnable(GL_DEPTH_TEST);        // ближние объекты закрывают дальние
-    glEnable(GL_LIGHTING);          // включаем освещение
-    glEnable(GL_LIGHT0);            // включаем источник света 0
-    glEnable(GL_COLOR_MATERIAL);    // glColor задаёт цвет материала
-    glEnable(GL_NORMALIZE);         // нормали приводятся к единичной длине
+    // Глубина, освещение и цвета материалов
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+    glEnable(GL_COLOR_MATERIAL);
+    glEnable(GL_NORMALIZE);
     glClearColor(0.10f, 0.13f, 0.18f, 1.0f);
 
-    // 6. Загрузка молекулы (имя файла из командной строки или water.xyz по умолчанию)
+    // По умолчанию открываем воду, либо файл из аргументов запуска
     loadXYZ(argc > 1 ? argv[1] : "water.xyz", window);
 
-    // 7. Цикл отрисовки
+    // Основной цикл
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
-        // Очищаем экран и буфер глубины
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
 
-        // Свет задаём до поворотов, поэтому он неподвижен относительно камеры
+        // Свет остаётся на месте при вращении молекулы
         GLfloat light[] = { 5.0f, 8.0f, 10.0f, 1.0f };
         glLightfv(GL_LIGHT0, GL_POSITION, light);
 
-        // Отодвигаем камеру (масштаб) и применяем повороты мышью
         glTranslatef(0.0f, 0.0f, -cameraDistance / zoomLevel);
         glRotatef(rotX, 1.0f, 0.0f, 0.0f);
         glRotatef(rotY, 0.0f, 1.0f, 0.0f);
 
-        // Сначала рисуем связи, потом атомы. Скрытые элементы пропускаем,
-        // связи со скрытыми атомами тоже не рисуем.
+        // Не рисуем связи, если хотя бы один из атомов скрыт
         for (const auto& bond : bonds) {
             const Atom& a = atoms[bond.first];
             const Atom& b = atoms[bond.second];
@@ -519,13 +502,13 @@ int main(int argc, char** argv) {
             if (isHidden(a.element)) continue;
             const ElementInfo& element = getElement(a.element);
             glPushMatrix();
-            glTranslatef(a.x, a.y, a.z);                  // переносим в позицию атома
-            glColor3f(element.r, element.g, element.b);   // цвет по таблице
-            drawSphere(element.sphereRadius);             // размер по таблице
+            glTranslatef(a.x, a.y, a.z);
+            glColor3f(element.r, element.g, element.b);
+            drawSphere(element.sphereRadius);
             glPopMatrix();
         }
 
-        // Интерфейс поверх молекулы
+        // Рисуем легенду поверх 3D-сцены
         ImGui_ImplOpenGL2_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -533,11 +516,10 @@ int main(int argc, char** argv) {
         ImGui::Render();
         ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
 
-        // Показываем нарисованный кадр
         glfwSwapBuffers(window);
     }
 
-    // 8. Завершение работы
+    // Освобождаем ресурсы ImGui и GLFW
     ImGui_ImplOpenGL2_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
