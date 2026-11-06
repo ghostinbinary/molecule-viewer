@@ -139,10 +139,22 @@ float rotY = 25.0f;
 float zoomLevel = 1.0f;
 float cameraDistance = 8.0f;
 
-// Не строим связи между одинаковыми щелочными и щелочноземельными металлами
+// Металлы, для которых исключаем связи между одинаковыми атомами
 bool isMetal(const string& s) {
-    return s == "Li" || s == "Na" || s == "K" || s == "Rb" || s == "Cs" ||
-        s == "Be" || s == "Mg" || s == "Ca" || s == "Sr" || s == "Ba";
+    static const set<string> metals = {
+        // Щелочные и щелочноземельные металлы
+        "Li", "Na", "K", "Rb", "Cs", "Fr",
+        "Be", "Mg", "Ca", "Sr", "Ba", "Ra",
+
+        // Переходные металлы 
+        "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn",
+        "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd",
+        "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg",
+        "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn",
+
+    };
+
+    return metals.count(s) > 0;
 }
 
 // XYZ: число атомов, строка описания, затем символ элемента и координаты
