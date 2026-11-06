@@ -218,6 +218,11 @@ bool loadXYZ(const string& filename, GLFWwindow* window) {
     for (int i = 0; i < count; ++i) {
         for (int j = i + 1; j < count; ++j) {
             if (atoms[i].element == atoms[j].element && isMetal(atoms[i].element)) continue;
+
+            // Запрещаем связи между атомами Mo
+            if (atoms[i].element == "Mo" && atoms[j].element == "Mo")
+                continue; 
+
             float dx = atoms[i].x - atoms[j].x;
             float dy = atoms[i].y - atoms[j].y;
             float dz = atoms[i].z - atoms[j].z;
